@@ -1,6 +1,6 @@
 // CLI: train / eval / predict.
 //   tsx src/cli.ts train [traces-path ...] [--synthetic N] [--out data/model.json]
-//   tsx src/cli.ts eval  [traces-path ...] [--synthetic N]
+//   tsx src/cli.ts eval  [traces-path ...] [--synthetic N] [--json 1]
 //   tsx src/cli.ts predict "<last message>" [--goal "..."] [--history a,b]
 
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -8,7 +8,8 @@ import { dirname } from "node:path";
 import { loadTraces } from "./importer.js";
 import { predict } from "./predictor.js";
 import { generateSynthetic } from "./synthetic.js";
-import { crossValidate, trainModel } from "./trainer.js";
+import { runBenchmark } from "./benchmark.js";
+import { trainModel } from "./trainer.js";
 import { loadModel, MODEL_PATH } from "./model-io.js";
 import { Trace } from "./types.js";
 
@@ -38,8 +39,8 @@ if (cmd === "train") {
   console.error(`blend weights [ngram, nb, heuristic]: ${model.weights.join(", ")}`);
   console.error(`wrote ${out}`);
 } else if (cmd === "eval") {
-  const r = crossValidate(gather());
-  console.log(JSON.stringify(r, null, 2));
+  const r = runBenchmark(gather());
+  console.log(flags.json ? JSON.stringify(r, null, 2) : r.markdown);
 } else if (cmd === "predict") {
   const history = (flags.history ?? "").split(",").filter(Boolean).map((tool) => ({ tool }));
   console.log(JSON.stringify(predict(loadModel(), { last_message: pos[0] ?? "", goal: flags.goal, history, top_k: 3 }), null, 2));

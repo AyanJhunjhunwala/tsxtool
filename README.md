@@ -66,6 +66,18 @@ npm run predict -- "FAIL src/a.ts" --goal "fix tests" --history run_command
 
 The model is written to `data/model.json` (gitignored) and loaded by the server; without it the server runs heuristics only. `predict_next_tool` also accepts `history` (`[{tool,args,result}]`) and `available_tools`.
 
+## Measuring the gains
+
+**Level 1: offline replay.** `npm run eval -- ~/.claude/projects` does k-fold CV by session and prints a markdown table: top-1 / top-3 / MRR for a majority baseline, rules only, n-gram only, text classifier only and the full blend (the ablations show which signal earns its keep), plus a speculation simulator (precision, coverage at confidence thresholds) and per-tool accuracy. Paste the output in a PR.
+
+**Level 2: live shadow mode.** Add the hooks from `examples/claude-settings.json` (fix the path) to `.claude/settings.json`. After every tool call the hook scores the previous prediction against what the agent really did and predicts the next one, appending to `data/shadow/<session>.jsonl`. It never prints or blocks, so agent behavior is unchanged. Then:
+
+```bash
+npm run report -- data/shadow --out report.md
+```
+
+This reports live top-1/top-3 vs. the majority baseline and the speculation sweep, including summed duration of exactly-matched read-only calls as an *upper bound* on time saved (real savings are capped by overlap with model thinking time). Caveats: parallel tool calls can blur per-call timings, and hit/miss is measured, not time actually saved: that needs an agent loop that executes and caches speculative calls.
+
 ## Setup & Running
 
 ### Requirements

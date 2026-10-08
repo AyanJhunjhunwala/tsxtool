@@ -146,7 +146,8 @@ export function predictDistribution(
   let [wg, wn, wh] = model.weights;
   // If sequence context was never seen, shift its weight to the other signals.
   wg *= ng.strength;
-  const z = wg + wn + wh || 1;
+  const z = wg + wn + wh;
+  if (z <= 0) return normalize(Object.fromEntries(tools.map((t) => [t, prior[t] ?? 1])));
   const out: Dist = {};
   for (const t of tools) {
     out[t] = (wg * (ng.dist[t] ?? 0) + wn * (nbd[t] ?? 0) + wh * (h[t] ?? 0)) / z;

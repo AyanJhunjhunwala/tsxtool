@@ -1,0 +1,10 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      { "matcher": "*", "hooks": [{ "type": "command", "command": "npx tsx /ABS/PATH/tsxtool/src/hook.ts pre" }] }
+    ],
+    "PostToolUse": [
+      { "matcher": "*", "hooks": [{ "type": "command", "command": "npx tsx /ABS/PATH/tsxtool/src/hook.ts post" }] }
+    ]
+  }
+}

@@ -11,7 +11,8 @@
     "eval": "tsx src/cli.ts eval",
     "predict": "tsx src/cli.ts predict",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test test/*.test.ts"
+    "test": "tsx --test test/*.test.ts",
+    "report": "tsx src/report.ts"
   },
   "keywords": [],
   "author": "",
