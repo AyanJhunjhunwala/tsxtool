@@ -5,6 +5,8 @@ import {
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
+import { predict } from "./src/predictor.js";
+import { loadModel } from "./src/model-io.js";
 
 // ============================================================================
 // 1. INPUT SCHEMA VALIDATION (Zod)
@@ -21,6 +23,21 @@ const PredictNextToolInputSchema = z.object({
 
   // How many candidate tools to suggest (defaults to 3 if omitted)
   top_k: z.number().int().positive().default(3),
+
+  // Prior tool calls in this session (oldest first). Enables sequence-based
+  // (n-gram) prediction and argument mapping, the strongest signals.
+  history: z
+    .array(
+      z.object({
+        tool: z.string(),
+        args: z.record(z.string(), z.unknown()).optional(),
+        result: z.string().optional(),
+      })
+    )
+    .optional(),
+
+  // Restrict candidates to the tools the agent actually has.
+  available_tools: z.array(z.string()).optional(),
 });
 
 // Infer the TypeScript type directly from the schema so we don't duplicate types
@@ -70,6 +87,24 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
               type: "number",
               description: "Number of tool recommendations to return (default: 3).",
             },
+            history: {
+              type: "array",
+              description: "Prior tool calls, oldest first: {tool, args?, result?}.",
+              items: {
+                type: "object",
+                properties: {
+                  tool: { type: "string" },
+                  args: { type: "object" },
+                  result: { type: "string" },
+                },
+                required: ["tool"],
+              },
+            },
+            available_tools: {
+              type: "array",
+              items: { type: "string" },
+              description: "Names of tools the agent can call; predictions are limited to these.",
+            },
           },
           required: ["last_message"],
         },
@@ -94,39 +129,17 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       );
     }
 
-    const { goal, last_message, top_k } = parsed.data;
+    const { goal, last_message, top_k, history, available_tools } = parsed.data;
 
-    // B. Baseline Prediction Heuristic (To be expanded with real models/logic)
-    // For now, demonstrate pattern detection on error messages vs viewing files.
-    const samplePredictions = [];
-
-    if (
-      last_message.toLowerCase().includes("error") ||
-      last_message.toLowerCase().includes("failed")
-    ) {
-      samplePredictions.push({
-        toolName: "view_file",
-        confidence: 0.88,
-        rationale: "Detected error message; inspecting source file is typically the first step.",
-        suggestedArguments: {},
-      });
-      samplePredictions.push({
-        toolName: "run_command",
-        confidence: 0.65,
-        rationale: "Rerunning the command with verbose flags or running tests.",
-        suggestedArguments: {},
-      });
-    } else {
-      samplePredictions.push({
-        toolName: "replace_file_content",
-        confidence: 0.75,
-        rationale: "Context indicates readiness to modify target code.",
-        suggestedArguments: {},
-      });
-    }
-
-    // Limit output to the requested top_k results
-    const predictions = samplePredictions.slice(0, top_k);
+    // B. Prediction: trained model (if data/model.json exists; re-read when it
+    // changes on disk) blended with heuristics. See src/predictor.ts.
+    const predictions = predict(loadModel(), {
+      goal,
+      last_message,
+      top_k,
+      history,
+      available_tools,
+    });
 
     // C. Return the result back to the MCP client
     return {
