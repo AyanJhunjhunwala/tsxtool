@@ -4,7 +4,14 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "dev": "tsx watch main.tsx",
+    "start": "tsx main.tsx",
+    "inspect": "npx @modelcontextprotocol/inspector tsx main.tsx",
+    "train": "tsx src/cli.ts train",
+    "eval": "tsx src/cli.ts eval",
+    "predict": "tsx src/cli.ts predict",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test test/*.test.ts"
   },
   "keywords": [],
   "author": "",
