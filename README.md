@@ -113,3 +113,4 @@ Add this server to your local MCP client configuration (Cursor, Claude Desktop, 
 - **Transport**: Communicates strictly over standard input/output (`stdio`) using JSON-RPC 2.0.
 - **Diagnostics**: All internal logging writes to `stderr` via `console.error` to avoid corrupting `stdout` JSON-RPC messages.
 - **Runtime Validation**: Incoming parameters are checked with Zod before processing to handle malformed calls from models without server crashes.
+
