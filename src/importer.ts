@@ -49,7 +49,7 @@ function fromTranscript(rows: any[]): Trace | null {
   const byId = new Map<string, TraceStep>();
   for (const r of rows) {
     const content = r?.message?.content;
-    if (r?.type === "user" && !goal && !r.isMeta) {
+    if (r?.type === "user" && !goal && !r.isMeta && !r.isSidechain) {
       const t = textOf(content).trim();
       if (t && !t.startsWith("<")) goal = t.slice(0, 500);
     }
@@ -65,7 +65,67 @@ function fromTranscript(rows: any[]): Trace | null {
       }
     }
   }
-  return steps.length >= 2 ? { goal, steps } : null;
+  return steps.length >= 2 ? { goal, steps, harness: "claude" } : null;
+}
+
+function parseArgs(a: unknown): Record<string, unknown> {
+  if (a && typeof a === "object") return a as Record<string, unknown>;
+  if (typeof a === "string") {
+    try {
+      const v = JSON.parse(a);
+      return v && typeof v === "object" ? v : { input: a };
+    } catch {
+      return { input: a };
+    }
+  }
+  return {};
+}
+
+/** Codex CLI rollout: response_item payloads of function_call / function_call_output. */
+function fromCodex(rows: any[]): Trace | null {
+  let goal: string | undefined;
+  const steps: TraceStep[] = [];
+  const byId = new Map<string, TraceStep>();
+  for (const r of rows) {
+    if (r?.type !== "response_item") continue;
+    const p = r.payload;
+    if (p?.type === "message" && p.role === "user" && !goal) {
+      const t = textOf(p.content).trim();
+      if (t && !t.startsWith("<") && !t.startsWith("#")) goal = t.slice(0, 500);
+    } else if (p?.type === "function_call" || p?.type === "custom_tool_call") {
+      const step: TraceStep = { tool: String(p.name), args: parseArgs(p.arguments ?? p.input) };
+      steps.push(step);
+      byId.set(p.call_id, step);
+    } else if (p?.type === "function_call_output" || p?.type === "custom_tool_call_output") {
+      const step = byId.get(p.call_id);
+      if (step) step.result = textOf(p.output).slice(0, 8000);
+    }
+  }
+  return steps.length >= 2 ? { goal, steps, harness: "codex" } : null;
+}
+
+/**
+ * OpenAI chat-completions style trajectories (OpenHands / SWE-rebench / Open-SWE-Traces):
+ * a message list where assistant messages carry tool_calls and tool messages carry results.
+ */
+export function fromOpenAIMessages(messages: any[]): Trace | null {
+  let goal: string | undefined;
+  const steps: TraceStep[] = [];
+  const byId = new Map<string, TraceStep>();
+  for (const m of messages ?? []) {
+    if (m?.role === "user" && !goal) goal = textOf(m.content).trim().slice(0, 500) || undefined;
+    if (m?.role === "assistant" && Array.isArray(m.tool_calls)) {
+      for (const tc of m.tool_calls) {
+        const step: TraceStep = { tool: String(tc?.function?.name), args: parseArgs(tc?.function?.arguments) };
+        steps.push(step);
+        if (tc.id) byId.set(tc.id, step);
+      }
+    } else if (m?.role === "tool") {
+      const step = byId.get(m.tool_call_id);
+      if (step) step.result = textOf(m.content).slice(0, 8000);
+    }
+  }
+  return steps.length >= 2 ? { goal, steps, harness: "openai" } : null;
 }
 
 export function loadTraces(path: string): Trace[] {
@@ -75,7 +135,7 @@ export function loadTraces(path: string): Trace[] {
     const native = fromNative(rows);
     if (native.length) traces.push(...native);
     else {
-      const t = fromTranscript(rows);
+      const t = rows.some((r) => r?.type === "response_item") ? fromCodex(rows) : fromTranscript(rows);
       if (t) traces.push(t);
     }
   }
