@@ -114,3 +114,12 @@ Add this server to your local MCP client configuration (Cursor, Claude Desktop, 
 - **Diagnostics**: All internal logging writes to `stderr` via `console.error` to avoid corrupting `stdout` JSON-RPC messages.
 - **Runtime Validation**: Incoming parameters are checked with Zod before processing to handle malformed calls from models without server crashes.
 
+
+## Status and findings
+
+This was an experiment, and it stopped here. What was learned:
+
+- **Prediction accuracy on real data is modest.** Trained on 698 real Claude Code sessions ([SWE-chat](https://huggingface.co/datasets/SALT-NLP/SWE-chat), 40.7k tool calls) and cross-validated by session, next-tool top-1 is about 57-59% and top-3 about 85%. The 92% figure from the synthetic data only measures fit to the generator. Train on real sessions: `npm run train -- data/real --harness claude` (importers handle Claude Code, Codex and OpenAI tool_calls formats).
+- **Speculative prefetch does not pay off in Claude Code.** Local tools are fast (Read ~0.02 s) and the cost is the model turn (~5 s), not the tool. Pre-running a likely `Read` picked the right file only 5-8% of the time; speculating `Bash` could save at most ~2% of Bash time and is risky.
+- **Web prefetch hook** (`src/hook.ts`, `src/web-cache.ts`, `npm run hook:config` / `hook:report`): prefetches URLs from the prompt or from `WebSearch` results and serves them to `WebFetch` from a cache. It works end to end, but 12 live A/B runs showed no measurable speedup (24.7 s vs 24.6 s mean) and PDFs are not supported. It is not installed by default. `TOOLPRED_SERVE=off` prefetches and logs only.
+- **Prior art**: PASTE (arXiv 2603.18897), Speculative Actions (2510.04371), TomasuLLM (2609.38201), ToolAhead (github.com/michael-ra/toolahead). Their gains come from tools that take seconds to minutes; Claude Code's are mostly fast.
