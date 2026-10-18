@@ -2,7 +2,7 @@
 // rule-based heuristic prior into one distribution over tools; then fills in
 // arguments with the learned argument mappers.
 
-import { contextFeatures, extractFeatures, extractPaths, isSafeToSpeculate } from "./features.js";
+import { contextFeatures, extractFeatures, extractPaths, extractUrls, isSafeToSpeculate } from "./features.js";
 import { scoreLR } from "./lr.js";
 import { MAX_ORDER, Model, Prediction, TraceStep } from "./types.js";
 
@@ -131,10 +131,9 @@ export interface Components {
 
 export function lrFeatures(history: TraceStep[], goal: string | undefined, last: string): string[] {
   const base = extractFeatures(last, goal);
-  // Cap bag-of-words so a long output cannot drown out the sequence/context features.
-  const sig = base.filter((f) => !f.startsWith("w:"));
-  const words = base.filter((f) => f.startsWith("w:")).slice(0, 120);
-  return [...sig, ...words, ...contextFeatures(history)];
+  // Bag-of-words hurt held-out accuracy on real traces (overfits), so only the
+  // named signals and the sequence/context features are used.
+  return [...base.filter((f) => !f.startsWith("w:")), ...contextFeatures(history)];
 }
 
 export function computeComponents(
@@ -207,6 +206,10 @@ function resolveSource(
     case "resultPath": {
       const s = history[history.length - src.fromBack];
       return extractPaths(s?.result ?? "")[src.index];
+    }
+    case "resultUrl": {
+      const s = history[history.length - src.fromBack];
+      return extractUrls(s?.result ?? "")[src.index];
     }
     case "resultRegex": {
       const s = history[history.length - src.fromBack];

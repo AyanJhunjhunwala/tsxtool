@@ -3,7 +3,7 @@
 // separately from data flow (argument mappers), plus a text classifier over the
 // previous tool's output to disambiguate when sequence context is ambiguous.
 
-import { extractFeatures, extractPaths } from "./features.js";
+import { extractFeatures, extractPaths, extractUrls } from "./features.js";
 import { blend, computeComponents, lrFeatures, predictDistribution } from "./predictor.js";
 import { featureIndices, trainLR } from "./lr.js";
 import { ArgMapper, ArgSource, MAX_ORDER, Model, Trace } from "./types.js";
@@ -39,6 +39,9 @@ function candidateSources(ex: Example, argName: string, value: string): ArgSourc
     for (const [k, v] of Object.entries(prev.args ?? {})) {
       if (v === value) out.push({ kind: "copyArg", fromBack: back, arg: k });
     }
+    extractUrls(prev.result ?? "").slice(0, 5).forEach((u, index) => {
+      if (u === value) out.push({ kind: "resultUrl", fromBack: back, index });
+    });
     const paths = extractPaths(prev.result ?? "");
     paths.slice(0, 5).forEach((p, index) => {
       if (p === value) out.push({ kind: "resultPath", fromBack: back, index });

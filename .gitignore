@@ -1,3 +1,5 @@
 data/model.json
 dist/
 data/real/
+data/web-cache/
+data/prefetch-log.jsonl

@@ -43,7 +43,7 @@ function fromNative(rows: any[]): Trace[] {
 }
 
 /** Claude Code transcript: one session file = one trace. */
-function fromTranscript(rows: any[]): Trace | null {
+function fromTranscript(rows: any[], minSteps = 2): Trace | null {
   let goal: string | undefined;
   const steps: TraceStep[] = [];
   const byId = new Map<string, TraceStep>();
@@ -65,7 +65,7 @@ function fromTranscript(rows: any[]): Trace | null {
       }
     }
   }
-  return steps.length >= 2 ? { goal, steps, harness: "claude" } : null;
+  return steps.length >= minSteps ? { goal, steps, harness: "claude" } : null;
 }
 
 function parseArgs(a: unknown): Record<string, unknown> {
@@ -126,6 +126,11 @@ export function fromOpenAIMessages(messages: any[]): Trace | null {
     }
   }
   return steps.length >= 2 ? { goal, steps, harness: "openai" } : null;
+}
+
+/** Single Claude Code transcript, e.g. the live session a hook points at. Tolerates short sessions. */
+export function loadTranscript(file: string): Trace | null {
+  return fromTranscript(parseLines(file), 0);
 }
 
 export function loadTraces(path: string): Trace[] {

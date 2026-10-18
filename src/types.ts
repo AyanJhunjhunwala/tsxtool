@@ -18,6 +18,7 @@ export interface Trace {
 export type ArgSource =
   | { kind: "copyArg"; fromBack: number; arg: string } // reuse arg of step N back
   | { kind: "resultPath"; fromBack: number; index: number } // Nth file path in result
+  | { kind: "resultUrl"; fromBack: number; index: number } // Nth URL in result
   | { kind: "resultRegex"; fromBack: number; pattern: string; group: number }
   | { kind: "goalPath"; index: number };
 
