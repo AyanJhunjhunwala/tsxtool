@@ -39,7 +39,8 @@ export interface LROptions {
 }
 
 export function trainLR(tools: string[], data: LRExample[], opts: LROptions = {}): LRModel {
-  const { epochs = 6, lr = 0.15, l2 = 2e-6 } = opts;
+  // Defaults chosen by sweep on real Claude Code sessions: higher lr/epochs overfit.
+  const { epochs = 4, lr = 0.05, l2 = 2e-6 } = opts;
   const K = tools.length;
   const W = new Float32Array(LR_DIM * K);
   const G = new Float32Array(LR_DIM * K).fill(1e-3);

@@ -12,6 +12,12 @@ export function extractPaths(text: string): string[] {
   return [...seen];
 }
 
+const URL_RE = /https?:\/\/[^\s)\]"'<>`]+/g;
+
+export function extractUrls(text: string): string[] {
+  return [...new Set([...text.matchAll(URL_RE)].map((m) => m[0].replace(/[.,;:]+$/, "")))];
+}
+
 const SIGNALS: Array<[string, RegExp]> = [
   ["sig:stacktrace", /\n\s+at .+\(.+:\d+:\d+\)|Traceback \(most recent call last\)|panicked at|^\s+File ".+", line \d+/m],
   ["sig:error", /\b(error|exception|failed|failure|fatal|TypeError|ReferenceError|SyntaxError)\b/i],
