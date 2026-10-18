@@ -9,6 +9,8 @@ export interface TraceStep {
 
 export interface Trace {
   goal?: string;
+  /** Which agent harness produced this trace (claude, codex, openai, native). */
+  harness?: string;
   steps: TraceStep[];
 }
 
@@ -25,6 +27,15 @@ export interface ArgMapper {
   support: number; // fraction of training examples this mapper reproduced
 }
 
+/** Hashed multinomial logistic regression over text + context features. */
+export interface LRModel {
+  dim: number;
+  tools: string[];
+  bias: number[];
+  /** Sparse rows: hashed feature index -> one weight per tool. */
+  w: Record<string, number[]>;
+}
+
 export interface Model {
   version: 1;
   tools: string[];
@@ -39,8 +50,10 @@ export interface Model {
   };
   /** mappers["prevTool>nextTool"] = ordered best-first. */
   argMappers: Record<string, ArgMapper[]>;
-  /** Learned blend weights for [ngram, nb, heuristic]. */
-  weights: [number, number, number];
+  /** Discriminative model; absent in models trained before it existed. */
+  lr?: LRModel;
+  /** Learned blend weights for [ngram, nb, heuristic, lr]. Older models have 3. */
+  weights: number[];
   trainedOn: { traces: number; transitions: number };
 }
 

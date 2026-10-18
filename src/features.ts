@@ -71,3 +71,66 @@ export function isSafeToSpeculate(tool: string): boolean {
   if (READ_ONLY.test(tool) && !SIDE_EFFECT.test(tool)) return true;
   return false;
 }
+
+/** Coarse intent of a shell command, so "Bash" is not one opaque action. */
+export function commandClass(cmd: string): string {
+  const c = cmd.trim().replace(/^(cd [^;&|]+(&&|;)\s*)+/, "");
+  if (/^git\b/.test(c)) return /\b(commit|push|add|checkout|merge|rebase|stash)\b/.test(c) ? "gitwrite" : "gitread";
+  if (/\b(pytest|jest|vitest|mocha|go test|cargo test|npm (run )?test|yarn test|pnpm test|bun test|unittest)\b/.test(c)) return "test";
+  if (/\b(tsc|build|make|cargo build|go build|compile|webpack|vite build|next build)\b/.test(c)) return "build";
+  if (/\b(npm|yarn|pnpm|pip3?|uv|brew|apt|cargo) (install|add|i)\b/.test(c)) return "install";
+  if (/\b(lint|eslint|prettier|ruff|mypy|black)\b/.test(c)) return "lint";
+  if (/^(grep|rg|find|ag)\b/.test(c)) return "search";
+  if (/^(cat|head|tail|ls|sed -n|wc|tree|pwd|stat|file)\b/.test(c)) return "peek";
+  if (/^(rm|mv|cp|mkdir|touch|chmod)\b/.test(c)) return "fs";
+  if (/^(curl|wget|gh)\b/.test(c)) return "net";
+  if (/^(node|python3?|tsx|ts-node|npx|bun|deno|ruby|go run|cargo run|\.\/)/.test(c)) return "exec";
+  return "other";
+}
+
+const CMD_KEYS = ["command", "cmd", "input"];
+
+/** Tool name refined by what it did, e.g. Bash:test, Bash:gitread. */
+export function labelOf(step: { tool: string; args?: Record<string, unknown> }): string {
+  const a = step.args ?? {};
+  for (const k of CMD_KEYS) {
+    const v = a[k];
+    const cmd = Array.isArray(v) ? v.join(" ") : v;
+    if (typeof cmd === "string" && /(bash|shell|exec|run|command)/i.test(step.tool)) return `${step.tool}:${commandClass(cmd)}`;
+  }
+  return step.tool;
+}
+
+function bucket(n: number): string {
+  return n <= 2 ? String(n) : n <= 4 ? "3-4" : n <= 8 ? "5-8" : n <= 16 ? "9-16" : n <= 32 ? "17-32" : "33+";
+}
+
+/** Sequence/state features: what happened recently, not just what the last output said. */
+export function contextFeatures(history: Array<{ tool: string; args?: Record<string, unknown>; result?: string }>): string[] {
+  const f: string[] = [`n:${bucket(history.length)}`];
+  const labs = history.map(labelOf);
+  const last = history.length - 1;
+  for (let k = 1; k <= 3 && k <= history.length; k++) {
+    f.push(`p${k}:${history[last - k + 1].tool}`, `l${k}:${labs[last - k + 1]}`);
+  }
+  if (history.length >= 2) {
+    f.push(`p12:${history[last - 1].tool}>${history[last].tool}`, `l12:${labs[last - 1]}>${labs[last]}`);
+  }
+  if (history.length >= 3) f.push(`l123:${labs[last - 2]}>${labs[last - 1]}>${labs[last]}`);
+  let rep = 0;
+  while (rep < 4 && rep < history.length && history[last - rep].tool === history[last].tool) rep++;
+  if (rep) f.push(`rep:${rep}`);
+  if (labs.some((l) => /(edit|write|patch)/i.test(l))) f.push("seen:edit");
+  if (labs.some((l) => l.endsWith(":test"))) f.push("seen:test");
+  if (history.length) {
+    const prev = history[last];
+    const res = prev.result ?? "";
+    f.push(`rl:${bucket(Math.round(Math.log2(res.length + 1)))}`);
+    const path = prev.args && (prev.args.file_path ?? prev.args.path);
+    if (typeof path === "string") {
+      f.push(`ext:${path.split(".").pop()}`);
+      if (/test|spec/i.test(path)) f.push("path:test");
+    }
+  }
+  return f;
+}
