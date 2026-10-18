@@ -1,6 +1,7 @@
 // CLI: train / eval / predict.
 //   tsx src/cli.ts train [traces-path ...] [--synthetic N] [--out data/model.json]
-//   tsx src/cli.ts eval  [traces-path ...] [--synthetic N]
+//   tsx src/cli.ts eval  [traces-path ...] [--synthetic N] [--harness claude|codex|openai] [--max N] [--no-lr 1]
+//   (train accepts --harness and --max too)
 //   tsx src/cli.ts predict "<last message>" [--goal "..."] [--history a,b]
 
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -21,7 +22,9 @@ for (let i = 0; i < rest.length; i++) {
 }
 
 function gather(): Trace[] {
-  const traces = pos.flatMap((p) => loadTraces(p));
+  let traces = pos.flatMap((p) => loadTraces(p));
+  if (flags.harness) traces = traces.filter((t) => t.harness === flags.harness);
+  if (flags.max) traces = traces.slice(0, Number(flags.max));
   if (flags.synthetic) traces.push(...generateSynthetic(Number(flags.synthetic)));
   if (!traces.length) traces.push(...generateSynthetic(300));
   return traces;
@@ -35,10 +38,10 @@ if (cmd === "train") {
   writeFileSync(out, JSON.stringify(model));
   console.error(`trained on ${model.trainedOn.traces} traces / ${model.trainedOn.transitions} transitions`);
   console.error(`tools: ${model.tools.join(", ")}`);
-  console.error(`blend weights [ngram, nb, heuristic]: ${model.weights.join(", ")}`);
+  console.error(`blend weights [ngram, nb, heuristic, lr]: ${model.weights.join(", ")}`);
   console.error(`wrote ${out}`);
 } else if (cmd === "eval") {
-  const r = crossValidate(gather());
+  const r = crossValidate(gather(), 5, { lr: flags["no-lr"] === undefined });
   console.log(JSON.stringify(r, null, 2));
 } else if (cmd === "predict") {
   const history = (flags.history ?? "").split(",").filter(Boolean).map((tool) => ({ tool }));

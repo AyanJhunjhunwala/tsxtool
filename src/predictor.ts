@@ -2,7 +2,8 @@
 // rule-based heuristic prior into one distribution over tools; then fills in
 // arguments with the learned argument mappers.
 
-import { extractFeatures, extractPaths, isSafeToSpeculate } from "./features.js";
+import { contextFeatures, extractFeatures, extractPaths, isSafeToSpeculate } from "./features.js";
+import { scoreLR } from "./lr.js";
 import { MAX_ORDER, Model, Prediction, TraceStep } from "./types.js";
 
 type Dist = Record<string, number>;
@@ -119,17 +120,32 @@ function nbDist(model: Model, tools: string[], feats: string[]): Dist {
   return normalize(out);
 }
 
-/** Full distribution over candidate tools. `available` restricts the candidate set. */
-export function predictDistribution(
+/** Per-signal distributions, kept separate so weights can be tuned without recomputing them. */
+export interface Components {
+  tools: string[];
+  ng: { dist: Dist; strength: number };
+  nb: Dist;
+  h: Dist;
+  lr: Dist | null;
+}
+
+export function lrFeatures(history: TraceStep[], goal: string | undefined, last: string): string[] {
+  const base = extractFeatures(last, goal);
+  // Cap bag-of-words so a long output cannot drown out the sequence/context features.
+  const sig = base.filter((f) => !f.startsWith("w:"));
+  const words = base.filter((f) => f.startsWith("w:")).slice(0, 120);
+  return [...sig, ...words, ...contextFeatures(history)];
+}
+
+export function computeComponents(
   model: Model | null,
   history: TraceStep[],
   goal?: string,
   lastMessage?: string,
   available?: string[],
-): Dist {
+): Components {
   const last = lastMessage ?? (history.length ? history[history.length - 1].result ?? "" : goal ?? "");
   const feats = extractFeatures(last, goal);
-  const fset = new Set(feats);
   const names = history.map((s) => s.tool);
 
   let tools = available?.length ? available : model?.tools.length ? model.tools : DEFAULT_TOOLS;
@@ -138,20 +154,44 @@ export function predictDistribution(
   const prior: Dist = {};
   if (model) for (const t of tools) prior[t] = (model.nb.toolCounts[t] ?? 0) + 1;
 
-  const h = heuristicDist(tools, fset, names.length === 0, prior);
-  if (!model || !model.trainedOn.transitions) return h;
+  const h = heuristicDist(tools, new Set(feats), names.length === 0, prior);
+  if (!model || !model.trainedOn.transitions) return { tools, ng: { dist: {}, strength: 0 }, nb: {}, h, lr: null };
 
-  const ng = ngramDist(model, tools, names);
-  const nbd = nbDist(model, tools, feats);
-  let [wg, wn, wh] = model.weights;
+  let lr: Dist | null = null;
+  if (model.lr) {
+    // Renormalize over the candidate set; tools the LR never saw get no mass from it.
+    const raw = scoreLR(model.lr, lrFeatures(history, goal, last));
+    const sub: Dist = {};
+    for (const t of tools) sub[t] = raw[t] ?? 0;
+    lr = Object.values(sub).some((v) => v > 0) ? normalize(sub) : null;
+  }
+  return { tools, ng: ngramDist(model, tools, names), nb: nbDist(model, tools, feats), h, lr };
+}
+
+export function blend(model: Model | null, c: Components, weights = model?.weights): Dist {
+  if (!model || !model.trainedOn.transitions || !weights) return c.h;
+  let [wg, wn, wh] = weights;
+  let wl = weights[3] ?? 0;
+  if (!c.lr) wl = 0;
   // If sequence context was never seen, shift its weight to the other signals.
-  wg *= ng.strength;
-  const z = wg + wn + wh || 1;
+  wg *= c.ng.strength;
+  const z = wg + wn + wh + wl || 1;
   const out: Dist = {};
-  for (const t of tools) {
-    out[t] = (wg * (ng.dist[t] ?? 0) + wn * (nbd[t] ?? 0) + wh * (h[t] ?? 0)) / z;
+  for (const t of c.tools) {
+    out[t] = (wg * (c.ng.dist[t] ?? 0) + wn * (c.nb[t] ?? 0) + wh * (c.h[t] ?? 0) + wl * (c.lr?.[t] ?? 0)) / z;
   }
   return normalize(out);
+}
+
+/** Full distribution over candidate tools. `available` restricts the candidate set. */
+export function predictDistribution(
+  model: Model | null,
+  history: TraceStep[],
+  goal?: string,
+  lastMessage?: string,
+  available?: string[],
+): Dist {
+  return blend(model, computeComponents(model, history, goal, lastMessage, available));
 }
 
 function resolveSource(
